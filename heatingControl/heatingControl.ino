@@ -1,4 +1,134 @@
 
+#include <ESP8266WiFi.h>
+#include <FirebaseArduino.h>
+#include "pass.h"
+#include <ArduinoJson.h>
+#include <DHT.h>
+#include <DHT_U.h>
+
+#define DHTTYPE DHT11
+#define DHTPIN D3
+#define LED 2
+#define RELAYPIN 5
+
+String eventType, eventPath;
+int eventData;
+DHT dht(DHTPIN, DHTTYPE);
+float lastTemperature = 0;
+int relayState = 0;
+int sleepTime = 5;
+
+void setup() {
+  pinMode(RELAYPIN, OUTPUT);
+  pinMode(LED, OUTPUT);
+  Serial.begin(9600);
+
+  // connect to wifi.
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.print("connecting");
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print(".");
+    blink(5);
+    delay(500);
+  }
+  Serial.println();
+  Serial.print("connected: ");
+  Serial.println(WiFi.localIP());
+
+  Firebase.begin(FIREBASE_HOST, FIREBASE_AUTH);
+  //Firebase.stream("/active");
+  dht.begin();
+}
+
+int n = 0;
+int currentMinutes = 1;
+
+void blink(int n) {
+  digitalWrite(LED, 0);
+  delay(50);
+  for(int i=0; i <=n; i++){
+  digitalWrite(LED, 1);
+  delay(50);
+  digitalWrite(LED, 0);
+  delay(50);
+  }
+}
+
+void loop() {
+  blink(1);
+  digitalWrite(RELAYPIN, relayState);
+  digitalWrite(LED, !relayState);
+  float t = dht.readTemperature();
+  float h = dht.readHumidity();
+  if (isnan(t) || isnan(h)) {
+    Serial.println("Failed to read from DHT");
+    blink(10);
+  } else {
+    Serial.print("Temperature: ");
+    Serial.print(t);
+    Serial.print("ºC Humidity: ");
+    Serial.println(h);
+    if (lastTemperature != t) {
+      lastTemperature = t;
+      Serial.print("Sending temperature: ");
+      Serial.println(t);
+      Firebase.setInt("temperature", t);
+      delay(500);
+
+      // handle error
+      if (Firebase.failed()) {
+        Serial.print("setting /temperature failed:");
+        Serial.println(Firebase.error());
+        return;
+      }
+    }
+  }
+
+  int active = Firebase.getInt("active"); 
+  if (active != relayState){
+    relayState = active;
+  digitalWrite(RELAYPIN, relayState);
+  digitalWrite(LED, !relayState);
+  Firebase.setInt("state", relayState);
+  
+  }
+
+  sleepTime = Firebase.getInt("sleepTime");
+
+//  if (Firebase.available()) {
+//    Serial.print("Stream available");
+//    FirebaseObject event = Firebase.readEvent();
+//    eventType = event.getString("type");
+//
+//    if (eventType.length() > 0) {
+//      Serial.print("event: ");
+//      Serial.println(eventType);
+//      eventPath = event.getString("path");
+//      Serial.print("path: ");
+//      Serial.println(eventPath);
+//      eventData = event.getInt("data");
+//      Serial.print("data: ");
+//      Serial.println(eventData);
+//      relayState = eventData;
+//      digitalWrite(RELAYPIN, relayState);
+//      digitalWrite(LED, !relayState);
+//      Firebase.setInt("state", relayState);
+//
+//    }
+//  }
+
+
+  if (Firebase.failed()) {
+    Serial.print("Reseting after fail:");
+    Serial.println(Firebase.error());
+    ESP.restart();
+  }
+  delay(sleepTime * 1000);
+
+
+
+
+}
 
 
 //
@@ -19,160 +149,3 @@
 
 // FirebaseDemo_ESP8266 is a sample that demo the different functions
 // of the FirebaseArduino API.
-
-#include <ESP8266WiFi.h>
-#include <FirebaseArduino.h>
-#include "pass.h"
-#include <ArduinoJson.h>
-#include <DHT.h>
-#include <DHT_U.h>
-
-#define DHTTYPE DHT11
-#define DHTPIN 2
-#define RELAYPIN 5
-
-String eventType, eventPath, eventData;
-DHT dht(DHTPIN, DHTTYPE);
-float lastTemperature = 0;
-int relayState = 0;
-
-void setup() {
-    pinMode(RELAYPIN, OUTPUT);
-  Serial.begin(9600);
-
-  // connect to wifi.
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  Serial.print("connecting");
-  while (WiFi.status() != WL_CONNECTED) {
-    Serial.print(".");
-    delay(500);
-  }
-  Serial.println();
-  Serial.print("connected: ");
-  Serial.println(WiFi.localIP());
-
-  Firebase.begin(FIREBASE_HOST, FIREBASE_AUTH);
-  //Firebase.stream("/test");
-  dht.begin();
-}
-
-int n = 0;
-int currentMinutes=1;
-
-void loop() {
-  relayState++;
-  if (relayState ==2){
-    relayState=0;
-  }
-  digitalWrite(RELAYPIN, relayState);
-  float t = dht.readTemperature();
-  float h = dht.readHumidity();
-  if (isnan(t) || isnan(h)) {
-    Serial.println("Failed to read from DHT");
-  } else {
-    Serial.print("Temperature: ");
-    Serial.print(t);
-    Serial.print("ºC Humidity: ");
-    Serial.println(h);
-    if (lastTemperature != t || true) {
-      lastTemperature = t;
-      Serial.print("Sending temperature: ");
-      Serial.println(t);
-      Firebase.pushFloat("temperature", t);
-      delay(1000);
-      Serial.print("Sending minutes: ");
-      Serial.println(currentMinutes);
-      Firebase.pushInt("timestamp", currentMinutes);
-      
-      // handle error
-      if (Firebase.failed()) {
-        Serial.print("setting /temperature failed:");
-        Serial.println(Firebase.error());
-        return;
-      }
-    }
-  }
-
-//
-//  if (Firebase.available()) {
-//    FirebaseObject event = Firebase.readEvent();
-//
-//    Serial.print("event: ");
-//    eventType = event.getString("type");
-//    Serial.println(eventType);
-//    eventPath = event.getString("path");
-//    Serial.print("path: ");
-//    Serial.println(eventPath);
-//    eventData = event.getString("data");
-//    Serial.print("data: ");
-//    Serial.println(eventData);
-//  }
-  if (Firebase.failed()) {
-    Serial.print("failed:");
-    Serial.println(Firebase.error());
-
-  }
-  delay(2000);
-currentMinutes+=1;
-
-  //  // set value
-  //  Firebase.setFloat("number", 42.0);
-  //  // handle error
-  //  if (Firebase.failed()) {
-  //      Serial.print("setting /number failed:");
-  //      Serial.println(Firebase.error());
-  //      return;
-  //  }
-  //  delay(1000);
-  //
-  //  // update value
-  //  Firebase.setFloat("number", 43.0);
-  //  // handle error
-  //  if (Firebase.failed()) {
-  //      Serial.print("setting /number failed:");
-  //      Serial.println(Firebase.error());
-  //      return;
-  //  }
-  //  delay(1000);
-  //
-  //  // get value
-  //  Serial.print("number: ");
-  //  Serial.println(Firebase.getFloat("number"));
-  //  delay(1000);
-  //
-  //  // remove value
-  //  Firebase.remove("number");
-  //  delay(1000);
-  //
-  //  // set string value
-  //  Firebase.setString("message", "hello world");
-  //  // handle error
-  //  if (Firebase.failed()) {
-  //      Serial.print("setting /message failed:");
-  //      Serial.println(Firebase.error());
-  //      return;
-  //  }
-  //  delay(1000);
-  //
-  //  // set bool value
-  //  Firebase.setBool("truth", false);
-  //  // handle error
-  //  if (Firebase.failed()) {
-  //      Serial.print("setting /truth failed:");
-  //      Serial.println(Firebase.error());
-  //      return;
-  //  }
-  //  delay(1000);
-  //
-  //  // append a new value to /logs
-  //  String name = Firebase.pushInt("logs", n++);
-  //  // handle error
-  //  if (Firebase.failed()) {
-  //      Serial.print("pushing /logs failed:");
-  //      Serial.println(Firebase.error());
-  //      return;
-  //  }
-  //  Serial.print("pushed: /logs/");
-  //  Serial.println(name);
-  
-}
